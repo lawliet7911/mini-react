@@ -86,3 +86,17 @@ function createTextNode(text) {
 
 ## 问题：dom节点多了之后，render会有什么影响？
 A：render函数是个同步任务，递归执行，必须全部递归处理完之后才能恢复js线程其他任务，dom节点过于庞大之后，导致js线程去进行递归早操，页面会卡顿。
+
+
+
+
+打卡Day01:
+小步走，最先通过写死的方式，创建简单的Dom节点，然后通过观察提取共同点，抽象出类似vdom的结构。再通过抽象实现两个创建节点的方法（createElement、createTextNode）实现节点创建。然后通过递归调用render方法，创建整个dom节点，挂载到对应的dom里。
+最后模仿react的实现方式重构代码，分为React、ReactDom两个文件。
+
+思考问题：dom节点多了之后，render会有什么影响？
+答：render函数是个同步任务，递归执行，必须全部递归处理完之后才能恢复js线程其他任务，dom节点过于庞大之后，导致js线程去进行递归早操，页面会卡顿。
+
+git: https://github.com/lawliet7911/mini-react
+
+#打卡 
