@@ -11,13 +11,15 @@ function createElement(type, props, ...children) {
     type,
     props: {
       ...props,
-      children: children.map((cihld) => (typeof cihld === 'string' ? createTextNode(cihld) : cihld)),
+      children: children.map((child) => {
+        const isTextNode = typeof child === 'string' || typeof child === 'number'
+        return isTextNode ? createTextNode(child) : child
+      }),
     },
   }
 }
 
 function createTextNode(text) {
-  console.log('wocao.')
   return {
     type: NodeType.TEXT_NODE,
     props: {
@@ -47,6 +49,7 @@ function patchProps(dom, props) {
 
 // 当前处理节点
 let nextUnitOfWork = null
+let wipRoot = null
 function render(vdom, container) {
   nextUnitOfWork = {
     dom: container,
@@ -54,20 +57,52 @@ function render(vdom, container) {
       children: [vdom],
     },
   }
+  wipRoot = nextUnitOfWork
+}
+
+function updateFunctionComponent(fiber) {
+  const children = [fiber.type(fiber.props)]
+
+  constructConnection(fiber, children)
+}
+
+function updateHostComponent(fiber) {
+  if (!fiber.dom) {
+    // 更新属性
+    fiber.dom = createDom(fiber.type)
+    patchProps(fiber.dom, fiber.props)
+  }
+  const children = fiber.props.children
+
+  constructConnection(fiber, children)
 }
 
 // 处理当前节点
 function performUnitOfWork(fiber) {
-  // 创建元素
-  if (!fiber.dom) {
-    // 更新属性
-    const dom = (fiber.dom = createDom(fiber.type))
-    fiber.parent.dom.append(dom)
-    patchProps(fiber.dom, fiber.props)
+  const isFunctionComponent = typeof fiber.type === 'function'
+  // 分离逻辑
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber)
+  } else {
+    updateHostComponent(fiber)
   }
 
-  // 构建关系
-  const children = fiber.props.children
+  // todo 错误的添加
+  if (fiber.type === NodeType.FRAGMENT) {
+    fiber.parent.dom.append(fiber.dom)
+  }
+
+  // 返回下一个fiber
+  if (fiber.child) return fiber.child
+  let nextFiber = fiber
+  while (nextFiber) {
+    if (nextFiber.sibling) return nextFiber.sibling
+    else nextFiber = nextFiber.parent
+  }
+}
+
+// 构建fiber之间的关系
+function constructConnection(fiber, children) {
   let preChild = null
   children.forEach((child, index) => {
     const isArray = plainType(child) === 'array'
@@ -88,20 +123,7 @@ function performUnitOfWork(fiber) {
     }
     //  结束一次循环 设置pre为当前节点 方便构建兄弟间的关系
     preChild = newFiber
-
-    // fragment 循环完
-    if (index === children.length - 1 && newFiber.parent.type === NodeType.FRAGMENT) {
-      newFiber.parent.parent.dom.append(newFiber.parent.dom)
-    }
   })
-  if (fiber.type === NodeType.FRAGMENT) {
-    fiber.parent.dom.append(fiber.dom)
-  }
-
-  // 返回下一个fiber
-  if (fiber.child) return fiber.child
-  if (fiber.sibling) return fiber.sibling
-  return fiber.parent?.sibling
 }
 
 function workLoop(deadline) {
@@ -112,7 +134,28 @@ function workLoop(deadline) {
     // do work
     shouldYield = deadline.timeRemaining() < 1
   }
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot()
+  }
   requestIdleCallback(workLoop)
+}
+
+function commitRoot() {
+  commitWork(wipRoot.child)
+  wipRoot = null
+}
+
+function commitWork(fiber) {
+  if (!fiber) return
+  let fiberParent = fiber.parent
+  while (!fiberParent.dom) {
+    fiberParent = fiberParent.parent
+  }
+  if (fiber.dom) {
+    fiberParent.dom.appendChild(fiber.dom)
+  }
+  commitWork(fiber.child)
+  commitWork(fiber.sibling)
 }
 
 requestIdleCallback(workLoop)
