@@ -40,10 +40,19 @@ function createDom(type) {
   }
 }
 
+function attachEvent(dom, keys, handler) {
+  const eventName = keys.slice(2).toLowerCase()
+  dom.addEventListener(eventName, handler)
+}
+
+// 处理props
 function patchProps(dom, props) {
   Object.keys(props).forEach((keys) => {
     if (keys === 'children') return
-    dom[keys] = props[keys]
+    if (keys.startsWith('on')) {
+      // 绑定事件
+      attachEvent(dom, keys, props[keys])
+    } else dom[keys] = props[keys]
   })
 }
 
