@@ -40,31 +40,57 @@ function createDom(type) {
   }
 }
 
-function attachEvent(dom, keys, handler) {
-  const eventName = keys.slice(2).toLowerCase()
+function attachEvent(dom, key, handler) {
+  const eventName = key.slice(2).toLowerCase()
   dom.addEventListener(eventName, handler)
 }
 
+function unbindEvent(dom, key, handler) {
+  const eventName = key.slice(2).toLowerCase()
+  dom.removeEventListener(eventName, handler)
+}
+
 // 处理props
-function patchProps(dom, props) {
-  Object.keys(props).forEach((keys) => {
-    if (keys === 'children') return
-    if (keys.startsWith('on')) {
-      // 绑定事件
-      attachEvent(dom, keys, props[keys])
-    } else dom[keys] = props[keys]
+function patchProps(dom, oldProps, newProps) {
+  // 新props没有的属性 删除掉
+  Object.keys(oldProps).forEach((key) => {
+    if (key !== 'children') {
+      if (!(key in newProps)) {
+        dom.removeAttribute(key)
+      }
+    }
+  })
+
+  Object.keys(newProps).forEach((key) => {
+    if (key === 'children') return
+    if (newProps[key] !== oldProps[key]) {
+      if (key.startsWith('on')) {
+        // 绑定事件
+        unbindEvent(dom, key, oldProps[key])
+        attachEvent(dom, key, newProps[key])
+      } else dom[key] = newProps[key]
+    }
   })
 }
 
 // 当前处理节点
 let nextUnitOfWork = null
 let wipRoot = null
+let currentRoot = null
 function render(vdom, container) {
   nextUnitOfWork = {
     dom: container,
     props: {
       children: [vdom],
     },
+  }
+  wipRoot = nextUnitOfWork
+}
+
+function update() {
+  nextUnitOfWork = {
+    dom: currentRoot.dom,
+    props: currentRoot.props,
   }
   wipRoot = nextUnitOfWork
 }
@@ -79,7 +105,7 @@ function updateHostComponent(fiber) {
   if (!fiber.dom) {
     // 更新属性
     fiber.dom = createDom(fiber.type)
-    patchProps(fiber.dom, fiber.props)
+    patchProps(fiber.dom, {}, fiber.props)
   }
   const children = fiber.props.children
 
@@ -112,17 +138,41 @@ function performUnitOfWork(fiber) {
 
 // 构建fiber之间的关系
 function constructConnection(fiber, children) {
+  let oldFiber = fiber.alternate?.child
   let preChild = null
   children.forEach((child, index) => {
     const isArray = plainType(child) === 'array'
-    const newFiber = {
-      type: isArray ? NodeType.FRAGMENT : child.type,
-      props: isArray ? { children: child } : child.props,
-      child: null,
-      parent: fiber,
-      sibling: null,
-      dom: null,
+    const isSameType = oldFiber && oldFiber.type === child.type
+    let newFiber
+    if (isSameType) {
+      // 更新逻辑
+      newFiber = {
+        type: isArray ? NodeType.FRAGMENT : child.type,
+        props: isArray ? { children: child } : child.props,
+        child: null,
+        parent: fiber,
+        sibling: null,
+        dom: oldFiber.dom,
+        effectTag: 'UPDATE',
+        alternate: oldFiber,
+      }
+    } else {
+      newFiber = {
+        type: isArray ? NodeType.FRAGMENT : child.type,
+        props: isArray ? { children: child } : child.props,
+        child: null,
+        parent: fiber,
+        sibling: null,
+        dom: null,
+        effectTag: 'PLACEMENT',
+        alternate: null,
+      }
     }
+
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling
+    }
+
     // 第一个节点设置为当前vdom fiber的 child
     if (index === 0) {
       fiber.child = newFiber
@@ -151,6 +201,7 @@ function workLoop(deadline) {
 
 function commitRoot() {
   commitWork(wipRoot.child)
+  currentRoot = wipRoot
   wipRoot = null
 }
 
@@ -160,8 +211,13 @@ function commitWork(fiber) {
   while (!fiberParent.dom) {
     fiberParent = fiberParent.parent
   }
-  if (fiber.dom) {
-    fiberParent.dom.appendChild(fiber.dom)
+
+  if (fiber.effectTag === 'UPDATE') {
+    patchProps(fiber.dom, fiber.alternate?.props, fiber.props)
+  } else if (fiber.effectTag === 'PLACEMENT') {
+    if (fiber.dom) {
+      fiberParent.dom.appendChild(fiber.dom)
+    }
   }
   commitWork(fiber.child)
   commitWork(fiber.sibling)
@@ -173,4 +229,5 @@ export default {
   createElement,
   createTextNode,
   render,
+  update,
 }
