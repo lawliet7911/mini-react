@@ -30,6 +30,7 @@ function createTextNode(text) {
 }
 
 function createDom(type) {
+  if (!type) return
   switch (type) {
     case NodeType.TEXT_NODE:
       return document.createTextNode('')
@@ -52,6 +53,7 @@ function unbindEvent(dom, key, handler) {
 
 // 处理props
 function patchProps(dom, oldProps, newProps) {
+  // console.log(dom, oldProps, newProps)
   // 新props没有的属性 删除掉
   Object.keys(oldProps).forEach((key) => {
     if (key !== 'children') {
@@ -60,7 +62,6 @@ function patchProps(dom, oldProps, newProps) {
       }
     }
   })
-
   Object.keys(newProps).forEach((key) => {
     if (key !== 'children') {
       if (newProps[key] !== oldProps[key]) {
@@ -78,6 +79,8 @@ function patchProps(dom, oldProps, newProps) {
 let nextUnitOfWork = null
 let wipRoot = null
 let currentRoot = null
+let deleteNodes = []
+let wipFiber = null
 function render(vdom, container) {
   nextUnitOfWork = {
     dom: container,
@@ -89,17 +92,21 @@ function render(vdom, container) {
 }
 
 function update() {
-  nextUnitOfWork = {
-    dom: currentRoot.dom,
-    props: currentRoot.props,
-    alternate: currentRoot,
+  let currentFiber = wipFiber || currentRoot
+  return () => {
+    // todo currentFiber 在局部组件更新后，其他组件渲染更新出问题，待处理
+    console.log(currentFiber)
+    nextUnitOfWork = {
+      ...currentFiber,
+      alternate: currentFiber,
+    }
+    wipRoot = nextUnitOfWork
   }
-  wipRoot = nextUnitOfWork
 }
 
 function updateFunctionComponent(fiber) {
+  wipFiber = fiber
   const children = [fiber.type(fiber.props)]
-
   constructConnection(fiber, children)
 }
 
@@ -144,6 +151,8 @@ function constructConnection(fiber, children) {
   let preChild = null
   children.forEach((child, index) => {
     const isArray = plainType(child) === 'array'
+    const isFunction = plainType(child) === 'function'
+    isFunction && (child = child())
     const isSameType = oldFiber && oldFiber.type === child.type
     let newFiber
     if (isSameType) {
@@ -159,6 +168,7 @@ function constructConnection(fiber, children) {
         alternate: oldFiber,
       }
     } else {
+      if (!child) return
       newFiber = {
         type: isArray ? NodeType.FRAGMENT : child.type,
         props: isArray ? { children: child } : child.props,
@@ -168,6 +178,9 @@ function constructConnection(fiber, children) {
         dom: null,
         effectTag: 'PLACEMENT',
         alternate: null,
+      }
+      if (oldFiber) {
+        deleteNodes.push(oldFiber)
       }
     }
 
@@ -183,8 +196,13 @@ function constructConnection(fiber, children) {
       preChild.sibling = newFiber
     }
     //  结束一次循环 设置pre为当前节点 方便构建兄弟间的关系
-    preChild = newFiber
+    if (newFiber) preChild = newFiber
   })
+
+  while (oldFiber) {
+    deleteNodes.push(oldFiber)
+    oldFiber = oldFiber.sibling
+  }
 }
 
 function workLoop(deadline) {
@@ -192,6 +210,10 @@ function workLoop(deadline) {
   let shouldYield = false
   while (nextUnitOfWork && !shouldYield) {
     nextUnitOfWork = performUnitOfWork(nextUnitOfWork)
+    // 判断当前工作的节点（function component）的兄弟节点是下一个工作节点
+    if (wipRoot?.sibling?.type === nextUnitOfWork?.type) {
+      nextUnitOfWork = undefined
+    }
     // do work
     shouldYield = deadline.timeRemaining() < 1
   }
@@ -201,10 +223,26 @@ function workLoop(deadline) {
   requestIdleCallback(workLoop)
 }
 
+// function component todo 插入顺序
+function commitDeleation(fiber) {
+  if (fiber.dom) {
+    let fiberParent = fiber.parent
+    while (!fiberParent.dom) {
+      fiberParent = fiberParent.parent
+    }
+    fiberParent.dom.removeChild(fiber.dom)
+  } else {
+    commitDeleation(fiber.child)
+  }
+}
+
 function commitRoot() {
+  deleteNodes.forEach(commitDeleation)
   commitWork(wipRoot.child)
   currentRoot = wipRoot
   wipRoot = null
+  wipFiber = null
+  deleteNodes = []
 }
 
 function commitWork(fiber) {
