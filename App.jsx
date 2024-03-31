@@ -22,8 +22,8 @@ const App = () => (
   <div id="app" class="main-container">
     <span style="brown;">Hello </span>
     <span style="color: skyblue;">mini-react ~</span>
-    {/* <Counter num={10}></Counter>
-    <Counter num={20}></Counter> */}
+    <Counter num={10}></Counter>
+    <Counter num={20}></Counter>
     <Counter num={num}></Counter>
     <button onClick={clickHandler}>点击事件</button>
     <br />

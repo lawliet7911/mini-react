@@ -62,13 +62,14 @@ function patchProps(dom, oldProps, newProps) {
   })
 
   Object.keys(newProps).forEach((key) => {
-    if (key === 'children') return
-    if (newProps[key] !== oldProps[key]) {
-      if (key.startsWith('on')) {
-        // 绑定事件
-        unbindEvent(dom, key, oldProps[key])
-        attachEvent(dom, key, newProps[key])
-      } else dom[key] = newProps[key]
+    if (key !== 'children') {
+      if (newProps[key] !== oldProps[key]) {
+        if (key.startsWith('on')) {
+          // 绑定事件
+          unbindEvent(dom, key, oldProps[key])
+          attachEvent(dom, key, newProps[key])
+        } else dom[key] = newProps[key]
+      }
     }
   })
 }
@@ -91,6 +92,7 @@ function update() {
   nextUnitOfWork = {
     dom: currentRoot.dom,
     props: currentRoot.props,
+    alternate: currentRoot,
   }
   wipRoot = nextUnitOfWork
 }
@@ -212,7 +214,7 @@ function commitWork(fiber) {
     fiberParent = fiberParent.parent
   }
 
-  if (fiber.effectTag === 'UPDATE') {
+  if (fiber.effectTag === 'UPDATE' && fiber.dom) {
     patchProps(fiber.dom, fiber.alternate?.props, fiber.props)
   } else if (fiber.effectTag === 'PLACEMENT') {
     if (fiber.dom) {
